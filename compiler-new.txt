@@ -1,0 +1,1097 @@
+'InPtr = 0,
+'InLength = 0,
+'MemPtr = 0,
+
+'ProgramBlock: Node = 0,
+
+'Node_global = 1001,
+'Node_const = 1002,
+'Node_callNative = 1003,
+'Node_return = 1007,
+'Node_let = 1008,
+'Node_throw = 1010,
+'Node_returnExpr = 1011,
+'Node_br = 1012,
+'Node_name = 1013,
+'Node_do = 1014,
+'Node_block = 1016,
+'Node_func = 1017,
+'Node_call = 1018,
+'Node_break = 1019,
+'Node_continue = 1020,
+'Node_assign = 1021,
+'Node_ternary = 1022,
+'Node_drop = 1023,
+'Node_type = 1025,
+'Node_typeSize = 1026,
+'Node_typeDot = 1027,
+'Node_loop = 1028,
+'Node_fieldOffset = 1029,
+
+'Node = @type {
+  type,
+  parentBlock: Node,
+  next: Node,
+  child: Node,
+  childLeft: Node,
+  childRight: Node,
+  value,
+  valueStr,
+  codePos,
+  name: Node,
+  def: Node,
+  func_paramsCount,
+  func_localsCount,
+  func_import,
+  func_export,
+},
+
+'xType_void = 0,
+'xType_i64 = 1,
+'xType_bool = 2,
+'xType_never = 3,
+'xType_any = 4,
+'xType_custom = 5,
+'xType_array = 6,
+
+'logError = @(line, pos) @import"(line, pos) => console.log(Number(line), __code.slice(Number(pos)))",
+'log = @(val) @import"(val) => console.log(val)",
+'logChar = @(val) @import"(val) => console.log(String.fromCharCode(Number(val)))",
+
+'main = @(codeLength): @i64 @export => (
+  InLength = codeLength,
+  MemPtr = codeLength,
+
+  ProgramBlock = parseExpr(0, 0),
+  traverseBlock(ProgramBlock, 0, 0, 0),
+   
+  'binaryLen = allocate(4, 0),
+
+  w(0x00), w(0x61), w(0x73), w(0x6d), w(0x01), w(0x00), w(0x00), w(0x00),
+
+  (
+    w(0x01), //Section_type
+    'len = len_start(0),
+    'len2 = len_start(0),
+    'count = 0,
+    @loop('funcNode: Node = ProgramBlock.child; funcNode == 0 ? @br; funcNode = funcNode.next)(
+      funcNode.child.type != Node_func ? (funcNode = funcNode.next, @con,),
+      w(0x60), //Type_func
+      leb(funcNode.child.func_paramsCount),
+      @loop('i = funcNode.child.func_paramsCount; i == 0 ? @br; i = i - 1)(
+        w(0x7e),
+      ),
+      funcNode.child.def == xType_void ? leb(0) : (
+        leb(1),
+        funcNode.child.def == xType_i64 ? w(0x7e), //Type_i64
+        funcNode.child.def == xType_bool ? w(0x7f),
+      ),
+      funcNode.value = count,
+      count = count + 1,
+    ),
+    len_end(len2, count),
+    len_end(len, 0),
+  ),
+  (
+    w(0x02), //Section_import
+    'len = len_start(0),
+    'len2 = len_start(0),
+    'count = 0, 
+    'i = 0, 
+    @loop('funcNode: Node = ProgramBlock.child; funcNode == 0 ? @br; funcNode = funcNode.next)(
+      funcNode.child.type != Node_func ? (funcNode = funcNode.next, @con,),
+      funcNode.child.child != 0 ? (funcNode = funcNode.next, i = i + 1, @con,),
+      leb(3), w(`e`), w(`n`), w(`v`), leb(_i64_load32_s(funcNode.valueStr)),
+      @loop('j = 0; j >= _i64_load32_s(funcNode.valueStr) ? @br; j = j + 1)( 
+        w(_i64_load8_u(funcNode.valueStr + 4 + j)),
+      ),
+      w(0),
+      leb(i),  
+      i = i + 1,
+      count = count + 1,
+    ),
+    len_end(len2, count),
+    len_end(len, 0),
+  ),
+  (
+    w(0x03), //Section_func
+    'len = len_start(0),
+    'len2 = len_start(0),
+    'count = 0,
+    'i = 0, 
+    @loop('funcNode: Node = ProgramBlock.child; funcNode == 0 ? @br; funcNode = funcNode.next)(
+      funcNode.child.type != Node_func ? (funcNode = funcNode.next, @con,),
+      funcNode.child.child == 0 ? (funcNode = funcNode.next, i = i + 1, @con,),
+      leb(i),
+      i = i + 1,
+      count = count + 1,
+    ),
+    len_end(len2, count),
+    len_end(len, 0),
+  ),
+  (
+    w(0x05), //Section_memory 
+    'len = len_start(0), 
+    leb(1), 
+    w(0), leb(1000), 
+    len_end(len, 0),
+  ),
+  (
+    w(0x06), //Section_global
+    'len = len_start(0),
+    'len2 = len_start(0),
+    'count = 0,
+    @loop('node: Node = ProgramBlock.child; node == 0 ? @br; node = node.next)(
+      node.child.type != Node_const ? (node = node.next, @con,),
+      w(0x7e), //Type_i64
+      leb(1),
+      w(0x42), //Opcode_i64_const
+      sleb(node.child.value),
+      w(0x0b), //Opcode_end
+      node.value = count,
+      count = count + 1,
+    ),
+    len_end(len2, count),
+    len_end(len, 0),
+  ),
+  (
+    w(0x07), //Section_export
+    'len = len_start(0),
+    'len2 = len_start(0),
+    w(0x06), w(0x6d), w(0x65), w(0x6d), w(0x6f), w(0x72), w(0x79), w(0x02), w(0x00),
+    'count = 1,
+    'i = 0, 
+    @loop('funcNode: Node = ProgramBlock.child; funcNode == 0 ? @br; funcNode = funcNode.next)(
+      funcNode.child.type != Node_func ? (funcNode = funcNode.next, @con,),
+      funcNode.child.func_export != 1 ? (funcNode = funcNode.next, i = i + 1, @con,),
+      leb(_i64_load32_s(funcNode.valueStr)),
+      @loop('j = 0; j >= _i64_load32_s(funcNode.valueStr) ? @br; j = j + 1)(
+        w(_i64_load8_u(funcNode.valueStr + 4 + j)),
+      ),
+      w(0), 
+      leb(i), 
+      i = i + 1,
+      count = count + 1,
+    ),
+    len_end(len2, count),
+    len_end(len, 0),
+  ),
+  (
+    w(0x0a), //Section_code
+    'len = len_start(0),
+    'len2 = len_start(0),
+    'count = 0,
+    @loop('funcNode: Node = ProgramBlock.child; funcNode == 0 ? @br; funcNode = funcNode.next)(
+      funcNode.child.type != Node_func ? (funcNode = funcNode.next, @con,),
+      funcNode.child.child == 0 ? (funcNode = funcNode.next, @con,),
+      'len3 = len_start(0),
+      'localsCount = funcNode.child.func_localsCount,
+      leb(localsCount),
+      @loop('i = 0; i >= localsCount ? @br; i = i + 1)(
+        leb(1),
+        w(0x7e),
+      ),
+      emitExpr(funcNode.child.child, 0, funcNode.child.def, 0, funcNode.child.def),
+      w(0x0b), //Opcode_end
+      len_end(len3, 0),
+      count = count + 1,
+    ),
+    len_end(len2, count),
+    len_end(len, 0),
+  ),
+  'val = MemPtr - binaryLen - 4,
+  _i64_store32(binaryLen, val),
+
+  (
+    'importsCount = allocate(4, 0),
+    'numberOfImports = 0,
+    @loop('funcNode: Node = ProgramBlock.child; funcNode == 0 ? @br; funcNode = funcNode.next)(
+      funcNode.child.type != Node_func ? (funcNode = funcNode.next, @con,),
+      funcNode.child.child != 0 ? (funcNode = funcNode.next, @con,),
+      'namePtr = allocate(4, 0),
+      'codePtr = allocate(4, 0),
+      _i64_store32(namePtr, funcNode.valueStr),
+      _i64_store32(codePtr, funcNode.child.func_import),
+      numberOfImports = numberOfImports + 1,
+    ),
+    _i64_store32(importsCount, numberOfImports),
+  ),
+
+  @ret: binaryLen,
+),
+
+'logInput = @(pos) => (
+  'line = 0,
+  @loop('i = 0; i == pos ? @br; i = i + 1)(
+    'char = _i64_load8_u(i),
+    char == 10 ? line = line + 1,
+  ),
+  logError(line, pos),
+),
+'throwError = @(node: Node) => (
+  node != 0 ? (
+   logInput(node.codePos),
+  ) : (
+    logInput(InPtr),
+  ),
+  @throw,
+),
+
+'traverseBlock = @(node: Node, parentBlock, funcNode: Node, loopBreakLevel) => (
+    node.type == Node_let ? (
+      @loop('child: Node = node.parentBlock; child == 0 ? @br; child = child.next)(
+        child == node ? @br,
+        child.type != Node_let ? (child = child.next, @con,),
+        strEq(node.valueStr, child.valueStr) ? throwError(node),
+      ),
+      funcNode != 0 ? (
+        node.value = funcNode.func_localsCount,
+        funcNode.func_localsCount = funcNode.func_localsCount + 1,
+      ),
+    ),
+    node.type == Node_name ? (
+      @loop('blockItem: Node = parentBlock; blockItem == 0 ? @br; blockItem = blockItem.parentBlock)(
+        @loop('def: Node = blockItem.child; def == 0 ? @br; def = def.next)(
+          def.type != Node_let ? (def = def.next, @con,),
+          strEq(node.valueStr, def.valueStr) ? (node.def = def, @br,),
+        ),
+        node.def != 0 ? @br,
+      ),
+      node.def == 0 ? throwError(node),
+    ),
+    node.type == Node_break ? 
+      node.value = loopBreakLevel + 1,
+    node.type == Node_continue ? 
+      node.value = loopBreakLevel,
+    node.type == Node_ternary ? 
+      loopBreakLevel = loopBreakLevel + 1,
+    node.type == Node_do ? 
+      loopBreakLevel = 0,
+    node.type == Node_loop ? 
+      loopBreakLevel = 0,
+    node.type == Node_func ? 
+      funcNode = node,
+    node.type == Node_block ? 
+      parentBlock = node,
+    node.child != 0 ? (
+      @loop('child: Node = node.child; child == 0 ? @br; child = child.next)(
+        traverseBlock(child, parentBlock, funcNode, loopBreakLevel),
+      ),
+    ),
+    node.childLeft != 0 ? (
+      @loop('child: Node = node.childLeft; child == 0 ? @br; child = child.next)(
+        traverseBlock(child, parentBlock, funcNode, loopBreakLevel),
+      ),
+    ),
+    node.childRight != 0 ? (
+      @loop('child: Node = node.childRight; child == 0 ? @br; child = child.next)(
+        traverseBlock(child, parentBlock, funcNode, loopBreakLevel),
+      ),
+    ),
+    node.type == Node_typeDot ? (
+      'def = node.child.def,
+      'type: Node = node.child.def.childLeft.def.child,
+      @loop('child: Node = type.child; child == 0 ? @br; child = child.next)(
+        strEq(node.valueStr, child.valueStr) ? (
+          node.def = child, 
+          @br,
+        ),
+      ),
+      node.def == 0 ? throwError(node),
+    ),
+),
+
+'parseLiteral = @(parentBlock): @i64 => (
+  s(0), p(`(`), e() ? (
+    'block: Node = newNode(@size: Node, Node_block, InPtr),
+    block.parentBlock = parentBlock,
+    'lastChild: Node = 0,
+    s(0), p(`)`), e() == 0 ? ( 
+      @loop(;;)(
+        'childNode = parseExpr(block, 0),
+        lastChild == 0 ? block.child = childNode : lastChild.next = childNode,
+        lastChild = childNode,
+        s(0), p(`)`), e() ? @br,
+        s(1), p(`,`),
+        s(0), p(`)`), e() ? @br,
+      ),
+    ),
+    @ret: block,
+  ),
+  s(0), p(`@`), p(`t`), p(`y`), p(`p`), p(`e`), e() ? (
+    'node: Node = newNode(@size: Node, Node_type, InPtr),
+    s(1), p(`{`),
+    'lastChild: Node = 0,
+    'count = 0,
+    s(0), p(`}`), e() == 0 ? ( 
+      @loop(;;)(
+        'childNode: Node = newNode(@size: Node, Node_let, InPtr),
+        parseSpaces(), childNode.valueStr = parseName(),
+        s(0), p(`:`), e() ? (
+          s(0), p(`@`), p(`b`), p(`o`), p(`o`), p(`l`), e() ? (
+            childNode.def = xType_bool,
+            childNode.value = count,
+            count = count + 8,
+          ) : (
+            s(0), p(`@`), p(`[`),  e() ? (
+              childNode.def = xType_array,
+              'fieldSize = parseNumber(),
+              childNode.value = count,
+              count = count + fieldSize,
+              s(1), p(`]`),
+            ) : (
+              childNode.def = xType_custom,
+              'nameNode: Node = newNode(@size: Node, Node_name, InPtr),
+              nameNode.valueStr = parseName(),
+              childNode.childLeft = nameNode,
+              childNode.value = count,
+              count = count + 8,
+            )
+          ),
+        ) : (
+          childNode.value = count,
+          count = count + 8,
+        ),
+        lastChild == 0 ? node.child = childNode : lastChild.next = childNode,
+        lastChild = childNode,
+        s(1), p(`,`),
+        s(0), p(`}`), e() ? @br,
+      ),
+    ),
+    node.value = count,
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`s`), p(`i`), p(`z`), p(`e`), p(`:`), e() ? (
+    'node: Node = newNode(@size: Node, Node_typeSize, InPtr),
+    node.child = parseExpr(parentBlock, 0),
+    node.child.type != Node_name ? throwError(node.child),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`o`), p(`f`), p(`f`), p(`s`), p(`e`), p(`t`), p(`:`), e() ? (
+    'node: Node = newNode(@size: Node, Node_fieldOffset, InPtr),
+    node.child = parseExpr(parentBlock, 0),
+    node.child.type != Node_typeDot ? throwError(node.child),
+    @ret: node,
+  ),
+  s(0), p(`'`), e() ? (
+    'node: Node = newNode(@size: Node, Node_let, InPtr),
+    node.parentBlock = parentBlock,
+    node.valueStr = parseName(),
+    node.def = xType_i64,
+    s(0), p(`:`), e() ? (
+      s(0), p(`@`), p(`b`), p(`o`), p(`o`), p(`l`), e() ? node.def = xType_bool : (
+        node.def = xType_custom,
+        'nameNode: Node = newNode(@size: Node, Node_name, InPtr),
+        nameNode.valueStr = parseName(),
+        node.childLeft = nameNode,
+      ),
+    ),
+    s(1), p(`=`),
+    node.child = parseExpr(parentBlock, 0),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`(`), e() ? (
+    'node: Node = newNode(@size: Node, Node_func, InPtr),
+    'firstParam: Node = 0, 'lastParam: Node = 0,
+    s(0), p(`)`), e() == 0 ? (
+      @loop(;;)(
+        'childNode: Node = newNode(@size: Node, Node_let, InPtr),
+        node.func_paramsCount = node.func_paramsCount + 1,
+        parseSpaces(),
+        childNode.valueStr = parseName(),
+        childNode.def = xType_i64,
+        s(0), p(`:`), e() ? ( 
+          s(0), p(`@`), p(`b`), p(`o`), p(`o`), p(`l`), e() ? childNode.def = xType_bool : (
+            childNode.def = xType_custom,
+            'nameNode: Node = newNode(@size: Node, Node_name, InPtr),
+            nameNode.valueStr = parseName(),
+            childNode.childLeft = nameNode,
+          ),
+        ),
+        lastParam == 0 ? firstParam = childNode : lastParam.next = childNode,
+        lastParam = childNode,
+        s(0), p(`)`), e() ? @br,
+        s(1), p(`,`),
+      ),
+    ),
+    node.def = xType_void,
+    s(0), p(`:`), e() ? (
+      s(0), p(`@`), p(`i`), p(`6`), p(`4`), e() ? node.def = xType_i64 : (
+        s(0), p(`@`), p(`b`), p(`o`), p(`o`), p(`l`), e() ? node.def = xType_bool : (
+          node.def = xType_custom,
+          'nameNode: Node = newNode(@size: Node, Node_name, InPtr),
+          nameNode.valueStr = parseName(),
+          node.childRight = nameNode,
+        ),
+      ),
+    ),
+    s(0), p(`@`), p(`i`), p(`m`), p(`p`), p(`o`), p(`r`), p(`t`), p(`"`), e() ? (
+      node.func_import = parseString(`"`),
+      @ret: node,
+    ),
+    s(0), p(`@`), p(`e`), p(`x`), p(`p`), p(`o`), p(`r`), p(`t`), e() ? (
+      node.func_export = 1,
+    ),
+    s(1), p(`=`), p(`>`),
+    'block: Node = parseExpr(parentBlock, 0),
+    node.child = block,
+    lastParam != 0 ? (
+      @loop('param: Node = firstParam;param == 0 ? @br; param = param.next)(
+        param.parentBlock = block,
+      ),
+      lastParam.next = block.child, 
+      block.child = firstParam,
+    ),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`b`), p(`r`), e() ? (
+    'node: Node = newNode(@size: Node, Node_break, InPtr),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`c`), p(`o`), p(`n`), e() ? (
+    'node: Node = newNode(@size: Node, Node_continue, InPtr),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`r`), p(`e`), p(`t`), p(`:`), e() ? (
+    'node: Node = newNode(@size: Node, Node_returnExpr, InPtr),
+    node.child = parseExpr(parentBlock, 0),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`r`), p(`e`), p(`t`), e() ? (
+    'node: Node = newNode(@size: Node, Node_return, InPtr),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`t`), p(`h`), p(`r`), p(`o`), p(`w`), e() ? (
+    'node: Node = newNode(@size: Node, Node_throw, InPtr),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`d`), p(`o`), p(`:`), e() ? (
+    'node: Node = newNode(@size: Node, Node_do, InPtr),
+    node.child = parseExpr(parentBlock, 0),
+    @ret: node,
+  ),
+  s(0), p(`@`), p(`l`), p(`o`), p(`o`), p(`p`), p(`(`), e() ? (
+    'block: Node = newNode(@size: Node, Node_block, InPtr),
+    block.parentBlock = parentBlock,
+    'lastChild: Node = 0,
+    s(0), p(`;`), e() == 0 ? ( 
+      @loop(;;)(
+        'childNode = parseExpr(block, 0),
+        lastChild == 0 ? block.child = childNode : lastChild.next = childNode,
+        lastChild = childNode,
+        s(0), p(`;`), e() ? @br,
+        s(1), p(`,`),
+      ),
+    ),
+    'node: Node = newNode(@size: Node, Node_loop, InPtr),
+    lastChild == 0 ? block.child = node : lastChild.next = node,
+    'block2: Node = newNode(@size: Node, Node_block, InPtr),
+    node.child = block2,
+    block2.parentBlock = block,
+    lastChild = 0,
+    s(0), p(`;`), e() == 0 ? ( 
+      @loop(;;)(
+        'childNode = parseExpr(block2, 0),
+        lastChild == 0 ? block2.child = childNode : lastChild.next = childNode,
+        lastChild = childNode,
+        s(0), p(`;`), e() ? @br,
+        s(1), p(`,`),
+      ),
+    ),
+    'lastLoopChild:Node = lastChild,
+    'firstAfterChild = 0,
+    lastChild = 0,
+    s(0), p(`)`), e() == 0 ? ( 
+      @loop(;;)(
+        'childNode = parseExpr(block2, 0),
+        lastChild == 0 ? firstAfterChild = childNode : lastChild.next = childNode,
+        lastChild = childNode,
+        s(0), p(`)`), e() ? @br,
+        s(1), p(`,`),
+      ),
+    ),
+    'expr: Node = parseExpr(block2, 0),
+    lastLoopChild == 0 ? block2.child = expr : lastLoopChild.next = expr, 
+    expr.next = firstAfterChild,
+    @ret: block,
+  ),
+  s(0), p(`@`), p(`d`), p(`r`), p(`o`), p(`p`), p(`:`), e() ? (
+    'node: Node = newNode(@size: Node, Node_drop, InPtr),
+    node.child = parseExpr(parentBlock, 0),
+    @ret: node,
+  ),
+  s(0), p(96), e() ? (
+    'node: Node = newNode(@size: Node, Node_const, InPtr),
+    node.value = r(),
+    InPtr = InPtr + 1,
+    r() != 96 ? throwError(node),
+    InPtr = InPtr + 1,
+    @ret: node,
+  ),
+  r() >= 48 ? r() <= 57 ? (
+    'node: Node = newNode(@size: Node, Node_const, InPtr),
+    s(0), p(`0`), p(`x`), e() ? node.value = parseHexNumber() : node.value = parseNumber(),
+    @ret: node,
+  ),
+  s(0), p(`_`), e() ? (
+    'node: Node = newNode(@size: Node, Node_callNative, InPtr),
+    node.value = getCallNativeOpcode(),
+    node.childLeft = parseExpr(parentBlock, 0),
+    s(0), p(`,`), e() ? node.childRight = parseExpr(parentBlock, 0),
+    s(1), p(`)`),
+    @ret: node,
+  ),
+  'node: Node = newNode(@size: Node, Node_name, InPtr),
+  node.valueStr = parseName(),
+  @ret: node,
+),
+
+'parseCallExpr = @(parentBlock, node): @i64 => (
+  node == 0 ? node = parseLiteral(parentBlock),
+  s(0), p(`(`), e() ? (
+    'callNode: Node = newNode(@size: Node, Node_call, InPtr),
+    callNode.childLeft = node,
+    'prevNode: Node = 0,
+    s(0), p(`)`), e() == 0 ? (
+      @loop(;;)(
+        'node: Node = parseExpr(parentBlock, 0),
+        prevNode == 0 ? callNode.childRight = node : prevNode.next = node,
+        prevNode = node,
+        s(0), p(`)`), e() ? @br,
+        s(1), p(`,`),
+      ),
+    ),
+    @ret: callNode,
+  ),
+  s(0), p(`.`), e() ? (
+    'dotNode: Node = newNode(@size: Node, Node_typeDot, InPtr),
+    dotNode.child = node,
+    dotNode.valueStr = parseName(),
+    @ret: parseCallExpr(parentBlock, dotNode),
+  ),
+  @ret: node,
+),
+
+'parseMulExpr = @(parentBlock, node): @i64 => (
+  node == 0 ? node = parseCallExpr(parentBlock, 0),
+  s(0), p(`*`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x7e02,
+    opNode.childLeft = node,
+    opNode.childRight = parseCallExpr(parentBlock, 0),
+    @ret: parseMulExpr(parentBlock, opNode),
+  ),
+  @ret: node,
+),
+
+'parseAddExpr = @(parentBlock, node): @i64 => (
+  node == 0 ? node = parseMulExpr(parentBlock, 0),
+  s(0), p(`+`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x7c02,
+    opNode.childLeft = node,
+    opNode.childRight = parseMulExpr(parentBlock, 0),
+    @ret: parseAddExpr(parentBlock, opNode),
+  ),
+  s(0), p(`-`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x7d02,
+    opNode.childLeft = node,
+    opNode.childRight = parseMulExpr(parentBlock, 0),
+    @ret: parseAddExpr(parentBlock, opNode),
+  ),
+  @ret: node,
+),
+
+'parseCpExpr = @(parentBlock, node): @i64 => (
+  node == 0 ? node = parseAddExpr(parentBlock, 0),
+  s(0), p(`<`), p(`=`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x5701,
+    opNode.childLeft = node,
+    opNode.childRight = parseAddExpr(parentBlock, 0),
+    @ret: parseCpExpr(parentBlock, opNode),
+  ),
+  s(0), p(`<`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x5301,
+    opNode.childLeft = node,
+    opNode.childRight = parseAddExpr(parentBlock, 0),
+    @ret: parseCpExpr(parentBlock, opNode),
+  ),
+  s(0), p(`>`), p(`=`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x5901,
+    opNode.childLeft = node,
+    opNode.childRight = parseAddExpr(parentBlock, 0),
+    @ret: parseCpExpr(parentBlock, opNode),
+  ),
+  s(0), p(`>`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x5501,
+    opNode.childLeft = node,
+    opNode.childRight = parseAddExpr(parentBlock, 0),
+    @ret: parseCpExpr(parentBlock, opNode),
+  ),
+  @ret: node,
+),
+'parseEqExpr = @(parentBlock, node): @i64 => (
+  node == 0 ? node = parseCpExpr(parentBlock, 0),
+  s(0), p(`=`), p(`=`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x5101,
+    opNode.childLeft = node,
+    opNode.childRight = parseCpExpr(parentBlock, 0),
+    @ret: parseEqExpr(parentBlock, opNode),
+  ),
+  s(0), p(`!`), p(`=`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_callNative, InPtr),
+    opNode.value = 0x5201,
+    opNode.childLeft = node,
+    opNode.childRight = parseCpExpr(parentBlock, 0),
+    @ret: parseEqExpr(parentBlock, opNode),
+  ),
+  @ret: node,
+),
+
+'parseExpr = @(parentBlock, temp): @i64 => (
+  'node = parseEqExpr(parentBlock, 0),
+  s(0), p(`=`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_assign, InPtr),
+    opNode.childLeft = node,
+    opNode.childRight = parseExpr(parentBlock, 0),
+    @ret: opNode,
+  ),
+  s(0), p(`?`), e() ? (
+    'opNode: Node = newNode(@size: Node, Node_ternary, InPtr),
+    opNode.child = node,
+    s(0), p(`:`), e() ? opNode.childRight = parseExpr(parentBlock, 0) : (
+      opNode.childLeft = parseExpr(parentBlock, 0),
+      s(0), p(`:`), e() ? opNode.childRight = parseExpr(parentBlock, 0),
+    ),
+    @ret: opNode,
+  ),
+  @ret: node,
+),
+
+'getCallNativeOpcode = @(): @i64 => (
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`t`), p(`r`), p(`u`), p(`n`), p(`c`), p(`_`), p(`f`), p(`6`), p(`4`), p(`_`), p(`s`), p(`(`), e() ? ( @ret: 0xb001,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`t`), p(`r`), p(`u`), p(`n`), p(`c`), p(`_`), p(`f`), p(`6`), p(`4`), p(`_`), p(`u`), p(`(`), e() ? ( @ret: 0xb101,),
+  s(0), p(`f`), p(`6`), p(`4`), p(`_`), p(`c`), p(`o`), p(`n`), p(`v`), p(`e`), p(`r`), p(`t`), p(`_`), p(`i`), p(`6`), p(`4`), p(`_`), p(`s`), p(`(`), e() ? ( @ret: 0xb901,),
+  s(0), p(`f`), p(`6`), p(`4`), p(`_`), p(`c`), p(`o`), p(`n`), p(`v`), p(`e`), p(`r`), p(`t`), p(`_`), p(`i`), p(`6`), p(`4`), p(`_`), p(`u`), p(`(`), e() ? ( @ret: 0xba01,),
+  s(0), p(`f`), p(`6`), p(`4`), p(`_`), p(`d`), p(`i`), p(`v`), p(`(`), e() ? ( @ret: 0xa301,),
+  s(0), p(`f`), p(`6`), p(`4`), p(`_`), p(`c`), p(`e`), p(`i`), p(`l`), p(`(`), e() ? ( @ret: 0x9b01,),
+  s(0), p(`f`), p(`6`), p(`4`), p(`_`), p(`f`), p(`l`), p(`o`), p(`o`), p(`r`), p(`(`), e() ? ( @ret: 0x9c01,),
+
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`a`), p(`n`), p(`d`), p(`(`), e() ? ( @ret: 0x8302,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`o`), p(`r`), p(`(`), e() ? ( @ret: 0x8402,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`s`), p(`h`), p(`l`), p(`(`), e() ? ( @ret: 0x8602,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`s`), p(`h`), p(`r`), p(`_`), p(`s`), p(`(`), e() ? ( @ret: 0x8702,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`s`), p(`h`), p(`r`), p(`_`), p(`u`), p(`(`), e() ? ( @ret: 0x8802,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`s`), p(`t`), p(`o`), p(`r`), p(`e`), p(`(`), e() ? ( @ret: 0x00003703,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`s`), p(`t`), p(`o`), p(`r`), p(`e`), p(`8`), p(`(`), e() ? ( @ret: 0x00003c03,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`s`), p(`t`), p(`o`), p(`r`), p(`e`), p(`1`), p(`6`), p(`(`), e() ? ( @ret: 0x00003d03,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`s`), p(`t`), p(`o`), p(`r`), p(`e`), p(`3`), p(`2`), p(`(`), e() ? ( @ret: 0x00003e03,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`l`), p(`o`), p(`a`), p(`d`), p(`8`), p(`_`), p(`s`), p(`(`), e() ? ( @ret: 0x00003000,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`l`), p(`o`), p(`a`), p(`d`), p(`8`), p(`_`), p(`u`), p(`(`), e() ? ( @ret: 0x00003100,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`l`), p(`o`), p(`a`), p(`d`), p(`1`), p(`6`), p(`_`), p(`s`), p(`(`), e() ? ( @ret: 0x00003200,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`l`), p(`o`), p(`a`), p(`d`), p(`1`), p(`6`), p(`_`), p(`u`), p(`(`), e() ? ( @ret: 0x00003300,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`l`), p(`o`), p(`a`), p(`d`), p(`3`), p(`2`), p(`_`), p(`s`), p(`(`), e() ? ( @ret: 0x00003400,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`l`), p(`o`), p(`a`), p(`d`), p(`3`), p(`2`), p(`_`), p(`u`), p(`(`), e() ? ( @ret: 0x00003500,),
+  s(0), p(`i`), p(`6`), p(`4`), p(`_`), p(`l`), p(`o`), p(`a`), p(`d`), p(`(`), e() ? ( @ret: 0x00002900,),
+  @ret: 0,
+),
+
+'emitExpr = @(node: Node, parentNode: Node, returnType, returnLoopType, returnFuncType) => (
+  node.type == Node_block ? (
+    @loop('child: Node = node.child; child == 0 ? @br; child = child.next)(
+      'nextNode = child.next,
+      'childReturnType = xType_void,
+      nextNode == 0 ? childReturnType = returnType,
+      emitExpr(child, node, childReturnType, returnLoopType, returnFuncType),
+    ),
+    @ret,
+  ),
+  node.type == Node_typeSize ? (
+    w(0x42), //Opcode_i64_const
+    sleb(node.child.def.child.value),
+    @ret,
+  ),
+  node.type == Node_fieldOffset ? (
+    node = node.child,
+    emitExpr(node.child, node, xType_i64, returnLoopType, returnFuncType),
+    w(0x42), //Opcode_i64_const
+    sleb(node.def.value),
+    w(0x7c), //_i64_add
+    returnType == xType_void ? throwError(node),
+    returnType == xType_bool ? w(0xa7),
+    @ret,
+  ),
+  node.type == Node_let ? (
+    node.child != 0 ? (
+      emitExpr(node.child, node, xType_i64, returnLoopType, returnFuncType),
+      w(0x21), //Opcode_local_set
+      leb(node.value),
+      returnType != xType_void ? (
+        w(0x20), //Opcode_local_get 
+        leb(node.value),
+      ),
+      @ret,
+    ),
+    @ret,
+  ),
+  node.type == Node_assign ? (
+    node.childLeft.type == Node_typeDot ? (
+      emitExpr(node.childLeft.child, node, xType_i64, returnLoopType, returnFuncType),
+      w(0x42), //Opcode_i64_const
+      sleb(node.childLeft.def.value),
+      w(0x7c), w(0xa7), //_i64_add _i32_wrap_i64
+      emitExpr(node.childRight, node, xType_i64, returnLoopType, returnFuncType),
+      w(0x37), w(0x00), w(0x00), //_i64_store
+      returnType != xType_void ? throwError(node),
+      @ret,
+  ),
+    emitExpr(node.childRight, node, xType_i64, returnLoopType, returnFuncType),
+    w(node.childLeft.def.parentBlock == ProgramBlock ?  0x24 : 0x21), //Opcode_global_set/Opcode_local_set
+    leb(node.childLeft.def.value),
+    returnType != xType_void ? (
+      w(node.childLeft.def.parentBlock == ProgramBlock ? 0x23 : 0x20), //Opcode_global_get/Opcode_local_get
+      leb(node.childLeft.def.value),
+    ),
+    @ret,
+  ),
+  node.type == Node_name ? (
+    node.def.parentBlock == ProgramBlock ? w(0x23) : w(0x20), //Opcode_global_get/Opcode_local_get
+    leb(node.def.value),
+    returnType == xType_void ? throwError(node),
+    returnType == xType_bool ? w(0xa7),
+    @ret,
+  ),
+  node.type == Node_typeDot ? (
+    emitExpr(node.child, node, xType_i64, returnLoopType, returnFuncType),
+    w(0x42), //Opcode_i64_const
+    sleb(node.def.value),
+    w(0x7c), w(0xa7), //_i64_add _i32_wrap_i64
+    w(0x29), w(0x00), w(0x00), //_i64_load
+    returnType == xType_void ? throwError(node),
+    returnType == xType_bool ? w(0xa7),
+    @ret,
+  ),
+  node.type == Node_call ? (
+    @loop('arg: Node = node.childRight; arg == 0 ? @br; arg = arg.next)(
+      emitExpr(arg, node, xType_i64, returnLoopType, returnFuncType),
+    ),
+    w(0x10), //Opcode_call
+    leb(node.childLeft.def.value),
+    returnType == xType_bool ? w(0xa7),
+    @ret,
+  ),
+  node.type == Node_const ? (
+    w(0x42), //Opcode_i64_const
+    sleb(node.value),
+    returnType == xType_void ? throwError(node),
+    returnType == xType_bool ? w(0xa7),
+    @ret,
+  ),
+  node.type == Node_return ? (
+    returnFuncType != 0 ? throwError(node),
+    w(0x0f), //Opcode_return
+    @ret,
+  ),
+  node.type == Node_returnExpr ? (
+    emitExpr(node.child, node, returnFuncType, returnLoopType, returnFuncType),
+    w(0x0f), //Opcode_return
+    @ret,
+  ),
+  node.type == Node_drop ? (
+    returnFuncType == 1 ? throwError(node),
+    emitExpr(node.child, node, xType_i64, returnLoopType, returnFuncType),
+    w(0x1a),
+    @ret,
+  ),
+  node.type == Node_throw ? (
+    w(0x00),
+    @ret,
+  ),
+  node.type == Node_break ? (
+    w(0x0c), //Opcode_br
+    leb(node.value),
+    @ret,
+  ),
+  node.type == Node_continue ? (
+    w(0x0c), //Opcode_br
+    leb(node.value),
+    @ret,
+  ),
+  node.type == Node_ternary ? (
+    emitExpr(node.child, node, xType_bool, returnLoopType, returnFuncType),
+    w(0x04), //Opcode_if
+    w(returnType == xType_i64 ? 0x7e : returnType == xType_bool ? 0x7f : 0x40), //Type_i32/Type_void
+    node.childLeft != 0 ? emitExpr(node.childLeft, node, returnType, returnLoopType, returnFuncType),
+    w(0x05), //Opcode_else
+    node.childRight != 0 ? emitExpr(node.childRight, node, returnType, returnLoopType, returnFuncType),
+    w(0x0b), //Opcode_end
+    @ret,
+  ),
+  node.type == Node_do ? (
+    w(0x02), //Opcode_block
+    w(returnType == xType_i64 ? 0x7e : returnType == xType_bool ? 0x7f : 0x40), //Type_i32/Type_void
+    w(0x03), //Opcode_loop
+    w(returnType == xType_i64 ? 0x7e : returnType == xType_bool ? 0x7f : 0x40), //Type_i32/Type_void
+    emitExpr(node.child, node, returnType, returnType, returnFuncType),
+    w(0x0b), //Opcode_end
+    w(0x0b), //Opcode_end
+    @ret,
+  ),
+  node.type == Node_loop ? (
+    w(0x02), //Opcode_block
+    w(returnType == xType_i64 ? 0x7e : returnType == xType_bool ? 0x7f : 0x40), //Type_i32/Type_void
+    w(0x03), //Opcode_loop
+    w(returnType == xType_i64 ? 0x7e : returnType == xType_bool ? 0x7f : 0x40), //Type_i32/Type_void
+    emitExpr(node.child, node, returnType, returnType, returnFuncType),
+    w(0x0c), leb(0),
+    w(0x0b), //Opcode_end
+    w(0x0b), //Opcode_end
+    @ret,
+  ),
+  node.type == Node_callNative ? (
+    'opcode = node.value,
+    'opcodeBytes = _i64_and(opcode, 0xff),
+    opcode = _i64_shr_s(opcode, 8),
+    returnType == xType_void ? opcodeBytes == 1 ? throwError(node),
+    returnType == xType_void ? opcodeBytes == 2 ? throwError(node),
+    'firstArgType = 1,
+    opcodeBytes == 0 ? firstArgType = 2 : opcodeBytes == 3 ? firstArgType = 2,
+    emitExpr(node.childLeft, node, firstArgType, returnLoopType, returnFuncType),
+    node.childRight != 0 ? emitExpr(node.childRight, node, 1, returnLoopType, returnFuncType),
+    firstArgType == 2 
+    ? (w(opcode), opcode = _i64_shr_s(opcode, 8), w(opcode), opcode = _i64_shr_s(opcode, 8), w(opcode),) 
+    : w(opcode),
+    returnType == xType_bool ? opcodeBytes == 2 ? w(0xa7),
+    @ret,
+  ),
+  throwError(0),
+),
+
+'strEq = @(str1Ptr, str2Ptr): @i64 => (
+  'char1 = 0,
+  'char2 = 0,
+  'str1Length = _i64_load32_s(str1Ptr),
+  str1Ptr = str1Ptr + 4,
+  'str2Length = _i64_load32_s(str2Ptr),
+  str2Ptr = str2Ptr + 4,
+  str1Length != str2Length ? @ret: 0,
+  @loop('i = 0; i >= str1Length ? @br; i = i + 1)(
+    char1 = _i64_load8_u(str1Ptr + i),
+    char2 = _i64_load8_u(str2Ptr + i),
+    char1 != char2 ? @ret: 0,
+  ),
+  @ret: 1,
+),
+'sleb = @(num) => (
+  'byte = 0,
+  @loop(;;)( 
+    byte = _i64_and(num, 0x7f),
+    num = _i64_shr_s(num, 7),
+    num == 0 ? _i64_and(byte, 0x40) == 0 ? (
+      w(byte),
+      @br,
+    ),
+    num == 0-1 ? _i64_and(byte, 0x40) != 0 ? (
+      w(byte),
+      @br,
+    ),
+    byte = _i64_or(byte, 0x80),
+    w(byte),
+    @con,
+  ),
+),
+'leb = @(num) => (
+  'byte = 0,
+  @loop(;;)( 
+    byte = _i64_and(num, 0x7f),
+    num = _i64_shr_s(num, 7),
+    num != 0 ? byte = _i64_or(byte, 0x80),
+    w(byte),
+    num != 0 ? @con,
+    @br,
+  ),
+),
+'len_start = @(num): @i64 => (
+  'temp = MemPtr,
+  'byte = 0,
+  byte = _i64_and(num, 0x7f),
+  num = _i64_shr_s(num, 7),
+  w(_i64_or(0x80, byte)),
+  byte = _i64_and(num, 0x7f),
+  num = _i64_shr_s(num, 7),
+  w(_i64_or(0x80, byte)),
+  w(_i64_and(num, 0x7f)),
+  @ret: temp,
+),
+
+'len_end = @(curr, length) => (
+  length == 0 ? length = MemPtr - curr - 3,
+  'temp = MemPtr,
+  MemPtr = curr,
+  'temp = len_start(length),
+  MemPtr = temp,
+),
+
+'ParsedFlag = 0,
+'ParsedStartPtr = 0,
+'ParsedFlagThrow = 0,
+
+'s = @(flagThrow) => (
+  parseSpaces(),
+  ParsedStartPtr = InPtr,
+  ParsedFlag = 1,
+  ParsedFlagThrow = flagThrow,
+),
+
+'p = @(char) => (
+  'temp = 0,
+  ParsedFlag ? (
+    ParsedFlag = parseChar(char),
+    ParsedFlag == 0 ? ParsedFlagThrow == 1 ? throwError(0),
+  ),
+),
+
+'e = @(): @i64 => (
+  ParsedFlag ? () : InPtr = ParsedStartPtr,
+  @ret: ParsedFlag,
+),
+
+'parseChar = @(char): @i64 => (
+  InPtr >= InLength ? @ret: 0,
+  r() != char ? @ret: 0,
+  InPtr = InPtr + 1,
+  @ret: 1,
+),
+
+'parseSpaces = @() => (
+  @loop(;;)( 
+    parseChar(32) ? @con,
+    parseChar(10) ? @con,
+    _i64_load8_u(InPtr) == `/` ? _i64_load8_u(InPtr + 1) == `/` ? (
+      InPtr = InPtr + 2,
+      @loop(;;)( 
+        InPtr = InPtr + 1,
+        r() != 10 ? @con,
+        @br,
+      ),
+      @con,
+    ),
+    _i64_load8_u(InPtr) == `/` ? _i64_load8_u(InPtr + 1) == `*` ? (
+      InPtr = InPtr + 2,
+      @loop(;;)( 
+        InPtr = InPtr + 1,
+        _i64_load8_u(InPtr) == `*` ? _i64_load8_u(InPtr + 1) == `/` ? (
+          InPtr = InPtr + 2,
+          @br,
+        ),
+        @con,
+      ),
+      @con,
+    ),
+    @br,
+  ),
+),
+
+'allocate = @(size, value): @i64 => (
+  'ptr = MemPtr,
+  MemPtr = MemPtr + size,
+  value != 0 ? (
+    size == 1 ? _i64_store8(ptr, value),
+    size == 2 ? _i64_store16(ptr, value),
+    size == 4 ? _i64_store32(ptr, value),
+    size == 8 ? _i64_store(ptr, value),
+  ),
+  @ret: ptr,
+),
+
+'parseName = @(): @i64 => (
+  'i = 0,
+  'temp = allocate(4, 0),
+  @loop(;;)(
+    'isNumber = 0,
+    r() >= 65 ? r() <= 90 ? isNumber = 1,
+    r() >= 97 ? r() <= 122 ? isNumber = 1,
+    r() >= 48 ? r() <= 57 ? isNumber = 1,
+    r() == 95 ? isNumber = 1,
+    isNumber ? (
+      allocate(1, r()),
+      InPtr = InPtr + 1,
+      i = i + 1,
+      @con,
+    ),
+    @br,
+  ),
+  _i64_store32(temp, i),
+  @ret: temp,
+),
+'parseString = @(char): @i64 => (
+  'i = 0,
+  'temp = allocate(4, 0),
+  @loop(;;)(
+    r() != char ? (
+      allocate(1, r()),
+      InPtr = InPtr + 1,
+      i = i + 1,
+      @con,
+    ),
+    @br,
+  ),
+  _i64_store32(temp, i),
+  InPtr = InPtr + 1,
+  @ret: temp,
+),
+
+'parseNumber = @(): @i64 => (
+  'num = 0,
+  @loop(;;)(
+    r() == `_` ? (
+      InPtr = InPtr + 1,
+      @con,
+    ),
+    r() >= 48 ? r() <= 57 ? (
+      num = num * 10 + (r() - 48,),
+      InPtr = InPtr + 1,
+      @con,
+    ),
+    @br,
+  ),
+  @ret: num,
+),
+'parseHexNumber = @(): @i64 => (
+  'num = 0,
+  @loop(;;)(
+    r() == `_` ? (
+      InPtr = InPtr + 1,
+      @con,
+    ),
+    r() >= 48 ? r() <= 57 ? (
+      num = num * 16 + (r() - 48,),
+      InPtr = InPtr + 1,
+      @con,
+    ),
+    r() >= 97 ? r() <= 102 ? (
+      num = num * 16 + (r() - 97,) + 10,
+      InPtr = InPtr + 1,
+      @con,
+    ),
+    @br,
+  ),
+  @ret: num,
+),
+
+'r = @(): @i64 => (@ret: _i64_load8_u(InPtr),),
+'w = @(byte) => (_i64_store8(MemPtr, byte), MemPtr = MemPtr + 1,),
+'read32 = @(ptr, offset): @i64 => (@ret: _i64_load32_s(ptr + offset),),
+'read8 = @(ptr, offset): @i64 => (@ret: _i64_load8_u(ptr + offset),),
+'newNode = @(size, type, codePos): @i64 => (
+  'ptr: Node = allocate(size, 0), 
+  ptr.type = type, 
+  ptr.codePos = codePos, 
+  @ret: ptr,
+),

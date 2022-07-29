@@ -1,0 +1,1 @@
+{"logError":"(line, pos) => console.log(Number(line), __code.slice(Number(pos)))","log":"(val) => console.log(val)","logChar":"(val) => console.log(String.fromCharCode(Number(val)))"}
